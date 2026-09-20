@@ -16,6 +16,17 @@
   var refใบลา = db.collection("leaveRequests").doc(รหัสใบลา);
   var ใบปัจจุบัน = null;      // เก็บข้อมูลใบลาล่าสุดที่อ่านมาจาก Firestore
   var ความเห็นปัจจุบัน = [];  // เก็บรายการความเห็นล่าสุด
+  var บทบาทผู้ใช้ = null;     // เก็บ role ของผู้ใช้ที่ล็อกอินอยู่ ไว้ตัดสินใจว่าจะแสดงปุ่มอนุมัติ/ไม่อนุมัติหรือไม่
+
+  // ── อ่าน role ของผู้ใช้ที่ล็อกอินอยู่จาก users/{uid} (pattern เดียวกับ leave-requests.js/dashboard.js)
+  //    ต้องรู้ role ก่อน ถึงจะตัดสินใจได้ว่าควรแสดงปุ่มอนุมัติ/ไม่อนุมัติหรือไม่ (สเปคหัวข้อ 2: employee เปลี่ยนสถานะไม่ได้) ──
+  db.collection("users").doc(user.uid).get().then(function (snap) {
+    บทบาทผู้ใช้ = snap.exists ? snap.data().role : "employee";
+    วาดใบลา();
+  }).catch(function () {
+    บทบาทผู้ใช้ = "employee"; // อ่าน role ไม่ได้ ให้ถือว่าไม่มีสิทธิ์ไว้ก่อน (ปลอดภัยกว่า)
+    วาดใบลา();
+  });
 
   // ── อ่านตัวใบลาแบบเรียลไทม์ ──
   refใบลา.onSnapshot(function (snap) {
@@ -41,12 +52,20 @@
       ความเห็นปัจจุบัน.push(c);
     });
     วาดความเห็น();
+  }, function (err) {
+    // ไม่มี error callback ตัวนี้มาก่อน ทำให้กรณี permission-denied (เช่น employee แก้ URL เปิดใบคนอื่น)
+    // หน้าจะค้างเงียบ ๆ ไม่มีอะไรขึ้นเลย — เพิ่ม callback นี้ให้ขึ้นข้อความแทน
+    var ที่วางความเห็น = document.getElementById("รายการความเห็น");
+    if (ที่วางความเห็น) {
+      ที่วางความเห็น.innerHTML = "<p>อ่านความเห็นไม่สำเร็จ: " + esc(err.message) + "</p>";
+    }
   });
 
   document.getElementById("ปุ่มส่งความเห็น").addEventListener("click", ส่งความเห็น);
 
   // ── วาดข้อมูลใบลาลงหน้าจอ ──
   function วาดใบลา() {
+    if (!ใบปัจจุบัน) return; // ยังไม่มีข้อมูลใบลา หรือยังไม่รู้ role ผู้ใช้ — รอรอบถัดไป
     var ใบ = ใบปัจจุบัน;
     var แถว = [
       ["หัวข้อ", esc(ใบ.title)],
@@ -63,14 +82,17 @@
       return '<div class="field-row"><span class="k">' + r[0] + "</span><span>" + r[1] + "</span></div>";
     }).join("");
 
-    // ปุ่มอนุมัติ / ไม่อนุมัติ ขึ้นเฉพาะใบที่ยังรอพิจารณา
-    if (ใบ.status === "รอพิจารณา") {
+    // ปุ่มอนุมัติ / ไม่อนุมัติ ขึ้นเฉพาะใบที่ยังรอพิจารณา และเฉพาะ manager/hr เท่านั้น
+    // (สเปคหัวข้อ 2 และ 6: employee เปลี่ยนสถานะไม่ได้ — Security Rules ปฏิเสธไว้แล้ว
+    //  แต่ถ้าไม่ซ่อนปุ่มด้วย employee จะกดแล้วเจอ error ดิบจาก Firestore)
+    var มีสิทธิ์อนุมัติ = บทบาทผู้ใช้ === "manager" || บทบาทผู้ใช้ === "hr";
+    if (ใบ.status === "รอพิจารณา" && มีสิทธิ์อนุมัติ) {
       html +=
         '<div class="btn-row">' +
         '<button type="button" class="btn-ok" id="ปุ่มอนุมัติ">อนุมัติ</button>' +
         '<button type="button" class="btn-danger" id="ปุ่มไม่อนุมัติ">ไม่อนุมัติ</button>' +
         "</div>";
-    } else {
+    } else if (ใบ.status !== "รอพิจารณา") {
       html += '<p class="hint">ใบนี้พิจารณาแล้ว จึงเปลี่ยนสถานะต่อไม่ได้</p>';
     }
 
@@ -85,9 +107,11 @@
 
     กล่องใบลา.innerHTML = html;
 
-    if (ใบ.status === "รอพิจารณา") {
+    if (ใบ.status === "รอพิจารณา" && มีสิทธิ์อนุมัติ) {
       document.getElementById("ปุ่มอนุมัติ").addEventListener("click", function () { เปลี่ยนสถานะ("อนุมัติ"); });
       document.getElementById("ปุ่มไม่อนุมัติ").addEventListener("click", function () { เปลี่ยนสถานะ("ไม่อนุมัติ"); });
+    }
+    if (ใบ.status === "รอพิจารณา") {
       document.getElementById("ปุ่มลบ").addEventListener("click", ลบใบลา);
     }
   }
