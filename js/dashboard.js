@@ -3,24 +3,36 @@
 // สัปดาห์ที่ 7: นับจากข้อมูลจริงใน Firestore (การกรองตามสิทธิ์ผู้ใช้เป็นงานสัปดาห์ที่ 8)
 // ─────────────────────────────────────────────────────────────
 
-ต้องล็อกอินก่อน(function () {
+ต้องล็อกอินก่อน(function (user) {
   var กล่องตัวเลข = document.getElementById("กล่องตัวเลข");
   var กล่องล่าสุด = document.getElementById("ล่าสุด");
 
   var สถานะทั้งหมด = ["รอพิจารณา", "อนุมัติ", "ไม่อนุมัติ"];
 
-  db.collection("leaveRequests").onSnapshot(function (snapshot) {
-    var รายการ = [];
-    snapshot.forEach(function (docSnap) {
-      var ใบ = docSnap.data();
-      ใบ.id = docSnap.id;
-      รายการ.push(ใบ);
-    });
+  // ── สัปดาห์ที่ 8: Security Rules ปฏิเสธการอ่านทั้ง collection แบบไม่กรอง
+  //     employee ต้องกรองด้วย .where("requesterId","==",uid) ถึงจะอ่านผ่านกฎ (เห็นสรุปเฉพาะใบของตัวเอง)
+  //     ส่วน manager/hr อ่านได้ทุกใบเหมือนเดิม ต้องไปอ่าน role จาก users/{uid} ก่อนตัดสินใจ query ──
+  db.collection("users").doc(user.uid).get().then(function (snap) {
+    var role = snap.exists ? snap.data().role : "employee";
+    var query = (role === "manager" || role === "hr")
+      ? db.collection("leaveRequests")
+      : db.collection("leaveRequests").where("requesterId", "==", user.uid);
 
-    วาดกล่องตัวเลข(รายการ);
-    วาดล่าสุด(รายการ);
-  }, function (err) {
-    กล่องตัวเลข.innerHTML = "<p>อ่านข้อมูลไม่สำเร็จ: " + esc(err.message) + "</p>";
+    query.onSnapshot(function (snapshot) {
+      var รายการ = [];
+      snapshot.forEach(function (docSnap) {
+        var ใบ = docSnap.data();
+        ใบ.id = docSnap.id;
+        รายการ.push(ใบ);
+      });
+
+      วาดกล่องตัวเลข(รายการ);
+      วาดล่าสุด(รายการ);
+    }, function (err) {
+      กล่องตัวเลข.innerHTML = "<p>อ่านข้อมูลไม่สำเร็จ: " + esc(err.message) + "</p>";
+    });
+  }).catch(function (err) {
+    กล่องตัวเลข.innerHTML = "<p>อ่านข้อมูลผู้ใช้ไม่สำเร็จ: " + esc(err.message) + "</p>";
   });
 
   function วาดกล่องตัวเลข(รายการ) {

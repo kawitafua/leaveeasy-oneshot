@@ -4,7 +4,7 @@
 // แก้ข้อมูลใน Firebase Console แล้วหน้านี้จะเปลี่ยนตามทันทีโดยไม่ต้องกด F5
 // ─────────────────────────────────────────────────────────────
 
-ต้องล็อกอินก่อน(function () {
+ต้องล็อกอินก่อน(function (user) {
   var กล่อง = document.getElementById("ผลลัพธ์");
 
   // ถ้ามีสถานะติดมาท้าย URL (มาจากหน้าแดชบอร์ด) ให้กรองเฉพาะสถานะนั้น
@@ -14,15 +14,30 @@
       "กำลังแสดงเฉพาะใบลาที่สถานะ " + สถานะที่กรอง + " · กดเมนู รายการใบลา เพื่อดูทั้งหมด";
   }
 
-  db.collection("leaveRequests")
-    .orderBy("createdAt", "desc")
-    .onSnapshot(function (snapshot) {
+  // ── สัปดาห์ที่ 8: Security Rules ปฏิเสธการอ่านทั้ง collection แบบไม่กรอง
+  //     employee ต้องกรองด้วย .where("requesterId","==",uid) ถึงจะอ่านผ่านกฎ (เห็นเฉพาะใบของตัวเอง)
+  //     ส่วน manager/hr อ่านได้ทุกใบเหมือนเดิม ต้องไปอ่าน role จาก users/{uid} ก่อนตัดสินใจ query ──
+  db.collection("users").doc(user.uid).get().then(function (snap) {
+    var role = snap.exists ? snap.data().role : "employee";
+    var เป็นผู้ขอลาเท่านั้น = !(role === "manager" || role === "hr");
+
+    // employee: กรองด้วย requesterId เท่านั้น (ไม่ใช้ orderBy ร่วมกับ where ต่างฟิลด์ เพราะ Firestore
+    //           ต้องมี composite index) แล้วเรียงลำดับเองด้วย JS แทนหลังอ่านข้อมูลมา
+    var query = เป็นผู้ขอลาเท่านั้น
+      ? db.collection("leaveRequests").where("requesterId", "==", user.uid)
+      : db.collection("leaveRequests").orderBy("createdAt", "desc");
+
+    query.onSnapshot(function (snapshot) {
       var รายการ = [];
       snapshot.forEach(function (docSnap) {
         var ใบ = docSnap.data();
         ใบ.id = docSnap.id;
         รายการ.push(ใบ);
       });
+
+      if (เป็นผู้ขอลาเท่านั้น) {
+        รายการ.sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+      }
 
       if (สถานะที่กรอง) {
         รายการ = รายการ.filter(function (ใบ) { return ใบ.status === สถานะที่กรอง; });
@@ -32,6 +47,9 @@
     }, function (err) {
       กล่อง.innerHTML = "<p>อ่านข้อมูลไม่สำเร็จ: " + esc(err.message) + "</p>";
     });
+  }).catch(function (err) {
+    กล่อง.innerHTML = "<p>อ่านข้อมูลผู้ใช้ไม่สำเร็จ: " + esc(err.message) + "</p>";
+  });
 
   function แสดงตาราง(รายการ) {
     if (รายการ.length === 0) {
