@@ -1,19 +1,132 @@
 // ─────────────────────────────────────────────────────────────
 // firestore.rules — กฎเฝ้าข้อมูลของ LeaveEasy
 //
-// สัปดาห์ที่ 7: กฎขั้นต่ำ "ต้องล็อกอินก่อน ถึงอ่าน/เขียนได้"
-// ยังไม่แยกสิทธิ์ตามบทบาท (employee / manager / hr) หรือตามเจ้าของข้อมูล
-// เช่น ผู้ขอลาคนหนึ่งยังเปิดใบลาของอีกคนได้อยู่ — เรื่องนี้เป็นงานของสัปดาห์ที่ 8
+// สัปดาห์ที่ 8: กฎรายห้องแบบเต็ม ตามตารางบทบาทหัวข้อ 2 และกฎการเปลี่ยนสถานะหัวข้อ 6
+// ของ leaveeasy-spec.md — แทนที่กฎขั้นต่ำ "ต้องล็อกอินก่อน" ของสัปดาห์ที่ 7
 //
-// {document=**} ครอบคลุมทุกโฟลเดอร์ (users, leaveTypes, leaveRequests)
-// รวมถึงโฟลเดอร์ย่อย approvals ที่ซ้อนอยู่ในแต่ละใบลาด้วย เพราะ ** จับทุกระดับความลึก
+// บทบาท (เก็บใน users/{uid}.role): employee (ผู้ขอลา) · manager (ผู้อนุมัติ) · hr (ฝ่ายบุคคล)
+//
+// ⚠️ หมายเหตุทางเทคนิค: ภาษา Firestore Security Rules ไม่รองรับชื่อฟังก์ชัน/ตัวแปรที่เป็นภาษาไทย
+// (ทดสอบกับ Firestore Emulator แล้วพบว่า compile ไม่ผ่าน) จึงตั้งชื่อฟังก์ชันเป็นภาษาอังกฤษ
+// แต่ยังคงคอมเมนต์อธิบายเป็นภาษาไทยตามธรรมเนียมของโปรเจกต์นี้ไว้ครบทุกจุด
 // ─────────────────────────────────────────────────────────────
 
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+
+    // ── ตัวช่วย: เช็กว่าล็อกอินอยู่หรือยัง ──
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // ── ตัวช่วย: อ่าน role ของผู้ใช้ที่ล็อกอินอยู่ จาก users/{uid}
+    //    ⚠️ เรียก get() ผ่านฟังก์ชันนี้จุดเดียว ให้ทุกกฎเรียกซ้ำได้
+    //    เพื่อคุม cost/recursion ของการเรียก get() ในกฎเดียวกัน ──
+    function role() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isManagerOrHr() {
+      return isSignedIn() && role() in ['manager', 'hr'];
+    }
+
+    function isHr() {
+      return isSignedIn() && role() == 'hr';
+    }
+
+    // ── ตัวช่วย: อ่านข้อมูลใบลาแม่ ให้กฎของ subcollection approvals ใช้ต่อ ──
+    function parentLeaveRequest(reqId) {
+      return get(/databases/$(database)/documents/leaveRequests/$(reqId)).data;
+    }
+
+    // =============================================================
+    // users — ผู้ใช้
+    // สเปคหัวข้อ 5: name, email, role (employee|manager|hr)
+    // =============================================================
+    match /users/{uid} {
+      // อ่านได้เมื่อ login เท่านั้น (ทุกหน้าต้องใช้แสดงชื่อ/role ของคนอื่นด้วย เช่น requesterName ที่จดซ้ำไว้)
+      allow read: if isSignedIn();
+
+      // เขียนได้เฉพาะเอกสารของตัวเอง (uid ตรงกับ auth.uid) ตอนสมัครสมาชิกเท่านั้น
+      // บังคับ role เริ่มต้นเป็น employee เสมอ (สอดคล้องกับ register.js และป้องกันสมัครแล้วตั้ง role อื่นเอง)
+      allow create: if isSignedIn()
+                    && request.auth.uid == uid
+                    && request.resource.data.role == 'employee';
+
+      // แก้ไขได้เฉพาะเอกสารของตัวเอง และห้ามแก้ field role ของตัวเองหลังสร้างแล้ว
+      // (ป้องกันผู้ใช้ยกระดับสิทธิ์ตัวเองเป็น manager/hr)
+      allow update: if isSignedIn()
+                    && request.auth.uid == uid
+                    && request.resource.data.role == resource.data.role;
+
+      // ไม่มีข้อกำหนดเรื่องลบผู้ใช้ในสเปค — ปิดกั้นไว้ก่อน (ปลอดภัยที่สุด)
+      allow delete: if false;
+    }
+
+    // =============================================================
+    // leaveTypes — ประเภทการลา
+    // สเปคหัวข้อ 2: ทุกคนอ่านได้ (ใช้ในฟอร์มยื่นใบลา) · เพิ่ม/แก้/ลบ ได้เฉพาะ hr
+    // =============================================================
+    match /leaveTypes/{typeId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isHr();
+    }
+
+    // =============================================================
+    // leaveRequests — ใบขอลา
+    // =============================================================
+    match /leaveRequests/{reqId} {
+
+      // สร้างได้ทุกคนที่ login โดย requesterId ต้องตรงกับ auth.uid ของตัวเอง
+      // และสถานะเริ่มต้นต้องเป็น "รอพิจารณา" เสมอ (หัวข้อ 6: ระบบตั้งให้อัตโนมัติ ไม่ให้ผู้ใช้เลือกเอง)
+      allow create: if isSignedIn()
+                    && request.resource.data.requesterId == request.auth.uid
+                    && request.resource.data.status == 'รอพิจารณา';
+
+      // อ่านได้เฉพาะเจ้าของเอง หรือ manager/hr อ่านได้ทุกใบ
+      // ⚠️ หมายเหตุ: leave-requests.js และ dashboard.js ปัจจุบันดึงทั้ง collection แบบไม่กรอง
+      // (ไม่มี .where("requesterId","==",uid)) — ดูรายงานท้ายงานเรื่องผลกระทบต่อหน้าจอ 2 หน้านี้
+      allow read: if isSignedIn()
+                  && (resource.data.requesterId == request.auth.uid || isManagerOrHr());
+
+      // แก้ไขได้ 2 แบบเท่านั้น ตามตารางหัวข้อ 2 และกฎหัวข้อ 6:
+      //   (ก) manager/hr เปลี่ยนสถานะ — ต้องเป็นไปตามลูกศร รอพิจารณา -> อนุมัติ/ไม่อนุมัติ เท่านั้น
+      //       ห้ามย้อนกลับ และแก้ได้เฉพาะช่อง status ห้ามเขียนทับช่องอื่น
+      //   (ข) hr กำหนดผู้อนุมัติ — แก้ได้เฉพาะช่อง approverId/approverName เท่านั้น (employee/manager ทำไม่ได้)
+      allow update: if isSignedIn() && (
+                      (
+                        isManagerOrHr()
+                        && resource.data.status == 'รอพิจารณา'
+                        && request.resource.data.status in ['อนุมัติ', 'ไม่อนุมัติ']
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+                      ) || (
+                        isHr()
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approverId', 'approverName'])
+                      )
+                    );
+
+      // ลบได้เฉพาะเจ้าของเอง และเฉพาะตอนสถานะยังเป็น "รอพิจารณา" เท่านั้น (ทุกบทบาท รวม manager/hr ลบของคนอื่นไม่ได้)
+      allow delete: if isSignedIn()
+                    && resource.data.requesterId == request.auth.uid
+                    && resource.data.status == 'รอพิจารณา';
+
+      // ── approvals — โฟลเดอร์ย่อยความเห็นการอนุมัติของใบลานี้ ──
+      // สเปคหัวข้อ 2: employee "เขียนความเห็นเพิ่มในใบของตัวเอง" ได้ · manager/hr "เขียนความเห็นในทุกใบ" ได้
+      match /approvals/{apId} {
+        // อ่านได้เท่ากับสิทธิ์อ่านใบลาแม่ (เจ้าของเอง หรือ manager/hr)
+        allow read: if isSignedIn()
+                    && (parentLeaveRequest(reqId).requesterId == request.auth.uid || isManagerOrHr());
+
+        // เขียนความเห็นใหม่ได้เมื่อ: เป็นเจ้าของใบลานี้ (employee เขียนในใบของตัวเอง)
+        //   หรือเป็น manager/hr (เขียนได้ในทุกใบ) — ต้องระบุ authorId เป็นของตัวเองเท่านั้น กันสวมรอย
+        allow create: if isSignedIn()
+                      && request.resource.data.authorId == request.auth.uid
+                      && (parentLeaveRequest(reqId).requesterId == request.auth.uid || isManagerOrHr());
+
+        // สเปคไม่ได้ระบุการแก้ไข/ลบความเห็นที่ส่งไปแล้วไว้เลย — ปิดกั้นไว้ก่อน (ปลอดภัยที่สุด)
+        allow update, delete: if false;
+      }
     }
   }
 }
