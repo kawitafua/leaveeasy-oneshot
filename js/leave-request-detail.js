@@ -17,11 +17,22 @@
   var ใบปัจจุบัน = null;      // เก็บข้อมูลใบลาล่าสุดที่อ่านมาจาก Firestore
   var ความเห็นปัจจุบัน = [];  // เก็บรายการความเห็นล่าสุด
   var บทบาทผู้ใช้ = null;     // เก็บ role ของผู้ใช้ที่ล็อกอินอยู่ ไว้ตัดสินใจว่าจะแสดงปุ่มอนุมัติ/ไม่อนุมัติหรือไม่
+  var รายชื่อผู้จัดการ = [];  // เก็บรายชื่อผู้ใช้ role=manager ไว้ให้ hr เลือกเป็นผู้อนุมัติ (โหลดเฉพาะตอนเป็น hr)
 
   // ── อ่าน role ของผู้ใช้ที่ล็อกอินอยู่จาก users/{uid} (pattern เดียวกับ leave-requests.js/dashboard.js)
   //    ต้องรู้ role ก่อน ถึงจะตัดสินใจได้ว่าควรแสดงปุ่มอนุมัติ/ไม่อนุมัติหรือไม่ (สเปคหัวข้อ 2: employee เปลี่ยนสถานะไม่ได้) ──
   db.collection("users").doc(user.uid).get().then(function (snap) {
     บทบาทผู้ใช้ = snap.exists ? snap.data().role : "employee";
+    // hr เท่านั้นที่ "กำหนดผู้อนุมัติให้แต่ละใบ" ได้ (สเปคหัวข้อ 2) — โหลดรายชื่อ manager ไว้ให้เลือก
+    if (บทบาทผู้ใช้ === "hr") {
+      return db.collection("users").where("role", "==", "manager").get().then(function (qs) {
+        รายชื่อผู้จัดการ = [];
+        qs.forEach(function (docSnap) {
+          รายชื่อผู้จัดการ.push({ id: docSnap.id, name: docSnap.data().name });
+        });
+      });
+    }
+  }).then(function () {
     วาดใบลา();
   }).catch(function () {
     บทบาทผู้ใช้ = "employee"; // อ่าน role ไม่ได้ ให้ถือว่าไม่มีสิทธิ์ไว้ก่อน (ปลอดภัยกว่า)
@@ -96,6 +107,25 @@
       html += '<p class="hint">ใบนี้พิจารณาแล้ว จึงเปลี่ยนสถานะต่อไม่ได้</p>';
     }
 
+    // กำหนดผู้อนุมัติ — เฉพาะ hr และเฉพาะใบที่ยังรอพิจารณา (สเปคหัวข้อ 2: hr "กำหนดผู้อนุมัติให้แต่ละใบ")
+    // Security Rules อนุญาตให้ hr แก้เฉพาะ approverId/approverName เท่านั้น ห้ามส่ง field อื่นไปด้วย
+    var มีสิทธิ์กำหนดผู้อนุมัติ = บทบาทผู้ใช้ === "hr" && ใบ.status === "รอพิจารณา";
+    if (มีสิทธิ์กำหนดผู้อนุมัติ) {
+      html += '<div class="field-row"><span class="k">กำหนดผู้อนุมัติ</span><span>';
+      if (รายชื่อผู้จัดการ.length === 0) {
+        html += "ยังไม่มีผู้จัดการ (manager) ในระบบให้เลือก";
+      } else {
+        html += '<select id="เลือกผู้อนุมัติใหม่">' +
+          รายชื่อผู้จัดการ.map(function (m) {
+            var เลือกอยู่ = ใบ.approverId === m.id ? " selected" : "";
+            return '<option value="' + esc(m.id) + '"' + เลือกอยู่ + ">" + esc(m.name) + "</option>";
+          }).join("") +
+          "</select> " +
+          '<button type="button" id="ปุ่มกำหนดผู้อนุมัติ">กำหนดผู้อนุมัติ</button>';
+      }
+      html += "</span></div>";
+    }
+
     // ปุ่มลบ — กดได้เฉพาะใบที่ยังรอพิจารณาเท่านั้น
     html += '<div class="btn-row">';
     if (ใบ.status === "รอพิจารณา") {
@@ -114,6 +144,25 @@
     if (ใบ.status === "รอพิจารณา") {
       document.getElementById("ปุ่มลบ").addEventListener("click", ลบใบลา);
     }
+    if (มีสิทธิ์กำหนดผู้อนุมัติ && รายชื่อผู้จัดการ.length > 0) {
+      document.getElementById("ปุ่มกำหนดผู้อนุมัติ").addEventListener("click", กำหนดผู้อนุมัติ);
+    }
+  }
+
+  // ── hr กำหนดผู้อนุมัติ — แก้เฉพาะช่อง approverId/approverName ห้ามส่ง field อื่นไปด้วยเด็ดขาด
+  //    (Security Rules อนุญาตเฉพาะ 2 ช่องนี้สำหรับ hr เท่านั้น ส่ง field อื่นไปด้วยจะโดนปฏิเสธทั้งคำขอ) ──
+  function กำหนดผู้อนุมัติ() {
+    var ตัวเลือก = document.getElementById("เลือกผู้อนุมัติใหม่");
+    if (!ตัวเลือก) return;
+    var รหัสที่เลือก = ตัวเลือก.value;
+    var ผู้จัดการที่เลือก = รายชื่อผู้จัดการ.filter(function (m) { return m.id === รหัสที่เลือก; })[0];
+    if (!ผู้จัดการที่เลือก) return;
+    refใบลา.update({
+      approverId: ผู้จัดการที่เลือก.id,
+      approverName: ผู้จัดการที่เลือก.name
+    }).catch(function (err) {
+      alert("กำหนดผู้อนุมัติไม่สำเร็จ: " + err.message);
+    });
   }
 
   // ── เปลี่ยนสถานะ — แก้เฉพาะช่อง status ห้ามเขียนทับช่องอื่น ──
