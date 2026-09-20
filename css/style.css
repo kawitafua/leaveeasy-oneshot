@@ -87,6 +87,8 @@ button:hover, .btn:hover { background: var(--สีหลักเข้ม); }
 button:disabled { opacity: .55; cursor: not-allowed; }
 .btn-ghost { background: #fff; color: var(--สีหลัก); }
 .btn-ghost:hover { background: #e8f1f8; }
+.btn-secondary { background: #757575; border-color: #757575; }
+.btn-secondary:hover { background: #616161; }
 .btn-danger { background: #b3261e; border-color: #b3261e; }
 .btn-danger:hover { background: #8c1c16; }
 .btn-ok { background: #1b7f45; border-color: #1b7f45; }
@@ -113,6 +115,7 @@ textarea { min-height: 110px; resize: vertical; }
 .alert-error { background: #fdecea; border: 1px solid #f5b3ad; color: #8b1f1a; }
 .alert-ok    { background: #e8f5e9; border: 1px solid #a5d6a7; color: #1b5e34; }
 .alert-ai    { background: #eef4ff; border: 1px solid #b9ccf5; color: #1a3e7a; }
+.alert-info  { background: #e3f2fd; border: 1px solid #90caf9; color: #0d47a1; }
 .hidden { display: none; }
 
 /* ── รายการความเห็น ── */
