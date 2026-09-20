@@ -1,5 +1,6 @@
 # 🔧 LeaveEasy — จุดเริ่มต้นของใบงาน
 
+- 👤 **ผู้จัดทำ:** กวิตา เฟื่องฟู
 - 🌐 **เว็บที่ใช้งานได้จริง:** https://leaveeasy-oneshot-kawitafua.web.app
 - 🧪 **ผลการทดสอบ:** [test-results.md](test-results.md)
 
