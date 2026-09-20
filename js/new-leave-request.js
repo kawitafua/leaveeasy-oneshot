@@ -1,20 +1,26 @@
 // ─────────────────────────────────────────────────────────────
 // js/new-leave-request.js — หน้าที่ 2 ยื่นใบลาใหม่
-// สัปดาห์ที่ 6 (ต้นสัปดาห์): เก็บไว้ในหน่วยความจำของเบราว์เซอร์เท่านั้น
-// ยังไม่บันทึกลงฐานข้อมูล (เป็นงานของสัปดาห์ที่ 7)
+// สัปดาห์ที่ 7: บันทึกใบลาใหม่ลง Firestore จริง
+// requesterId = uid ของคนที่ล็อกอินอยู่จริง (ไม่ใช่ค่าสมมติอีกต่อไป)
 // ─────────────────────────────────────────────────────────────
 
-(function () {
+ต้องล็อกอินก่อน(function (user) {
   var ฟอร์ม = document.getElementById("ฟอร์มใบลา");
   var ช่องประเภท = document.getElementById("leaveTypeId");
   var กล่องเตือน = document.getElementById("ข้อความเตือน");
+  var ปุ่มบันทึก = document.getElementById("ปุ่มบันทึก");
 
-  // เติมรายการเลื่อนลงด้วยประเภทการลาที่มีอยู่
-  window.LEAVE_DATA.leaveTypes.forEach(function (ประเภท) {
-    var ตัวเลือก = document.createElement("option");
-    ตัวเลือก.value = ประเภท.id;
-    ตัวเลือก.textContent = ประเภท.name;
-    ช่องประเภท.appendChild(ตัวเลือก);
+  // เติมรายการเลื่อนลงด้วยประเภทการลาจากโฟลเดอร์ leaveTypes จริง (สัปดาห์ที่ 7 เป็นต้นไป)
+  db.collection("leaveTypes").get().then(function (snapshot) {
+    snapshot.forEach(function (docSnap) {
+      var ประเภท = docSnap.data();
+      var ตัวเลือก = document.createElement("option");
+      ตัวเลือก.value = docSnap.id;
+      ตัวเลือก.textContent = ประเภท.name;
+      ช่องประเภท.appendChild(ตัวเลือก);
+    });
+  }).catch(function (err) {
+    เตือน("โหลดประเภทการลาไม่สำเร็จ: " + err.message);
   });
 
   ฟอร์ม.addEventListener("submit", function (e) {
@@ -38,31 +44,39 @@
       return;
     }
 
-    var ประเภท = window.LEAVE_DATA.leaveTypes.find(function (t) { return t.id === ค่า.leaveTypeId; });
+    ปุ่มบันทึก.disabled = true;
+    ปุ่มบันทึก.textContent = "กำลังบันทึก…";
 
-    // สัปดาห์ที่ 6 ยังไม่มีล็อกอิน จึงสมมติว่าผู้ขอลาคือ สมชาย ใจดี
-    var ใบใหม่ = {
-      id: "lr-ใหม่-" + Date.now(),
-      title: ค่า.title,
-      reason: ค่า.reason,
-      status: "รอพิจารณา",                       // ใบใหม่เริ่มที่ รอพิจารณา เสมอ
-      requesterId: "u001", requesterName: "สมชาย ใจดี",
-      approverId: "",      approverName: "",
-      leaveTypeId: ประเภท.id, leaveTypeName: ประเภท.name,
-      startDate: ค่า.startDate,
-      endDate: ค่า.endDate,
-      createdAt: เวลาตอนนี้()
-    };
+    var ชื่อประเภท = ช่องประเภท.options[ช่องประเภท.selectedIndex].textContent;
 
-    var รายการ = JSON.parse(sessionStorage.getItem("ใบลาที่ยื่นใหม่") || "[]");
-    รายการ.push(ใบใหม่);
-    sessionStorage.setItem("ใบลาที่ยื่นใหม่", JSON.stringify(รายการ));
+    // ต้องรู้ชื่อผู้ขอลาก่อน (จดชื่อซ้ำไว้ใน requesterName ตามหัวข้อ 5)
+    db.collection("users").doc(user.uid).get().then(function (snap) {
+      var ชื่อผู้ขอลา = (snap.exists && snap.data().name) ? snap.data().name : (user.email || "");
 
-    location.href = "leave-requests.html";
+      var ใบใหม่ = {
+        title: ค่า.title,
+        reason: ค่า.reason,
+        status: "รอพิจารณา",                       // ใบใหม่เริ่มที่ รอพิจารณา เสมอ ตั้งอัตโนมัติ
+        requesterId: user.uid, requesterName: ชื่อผู้ขอลา,
+        approverId: "",         approverName: "",
+        leaveTypeId: ค่า.leaveTypeId, leaveTypeName: ชื่อประเภท,
+        startDate: ค่า.startDate,
+        endDate: ค่า.endDate,
+        createdAt: เวลาตอนนี้()
+      };
+
+      return db.collection("leaveRequests").add(ใบใหม่);
+    }).then(function () {
+      location.href = "leave-requests.html";
+    }).catch(function (err) {
+      ปุ่มบันทึก.disabled = false;
+      ปุ่มบันทึก.textContent = "บันทึก";
+      เตือน("บันทึกไม่สำเร็จ: " + err.message);
+    });
   });
 
   function เตือน(ข้อความ) {
     กล่องเตือน.textContent = "⚠️ " + ข้อความ;
     กล่องเตือน.classList.remove("hidden");
   }
-})();
+});

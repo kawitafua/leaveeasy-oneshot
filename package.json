@@ -2,11 +2,16 @@
   "name": "leaveeasy-start",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "LeaveEasy — จุดเริ่มต้นของใบงาน ADT-RAISE Batch 2 Module 2",
   "scripts": {
-    "dev": "serve -l 3000 ."
+    "dev": "serve -l 3000 .",
+    "seed": "node scripts/seed.js"
   },
   "devDependencies": {
     "serve": "^14.2.1"
+  },
+  "dependencies": {
+    "firebase": "^10.12.2"
   }
 }

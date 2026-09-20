@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LeaveEasy ระบบขอลาออนไลน์</title>
   <link rel="stylesheet" href="css/style.css">
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-config.js"></script>
+  <script src="js/util.js" defer></script>
   <script src="js/nav.js" defer></script>
 </head>
 <body>
@@ -20,7 +25,9 @@
         <a class="btn" href="leave-requests.html">รายการใบลา</a>
         <a class="btn btn-ghost" href="new-leave-request.html">ยื่นใบลาใหม่</a>
         <a class="btn btn-ghost" href="leave-types.html">จัดการประเภทการลา</a>
+        <a class="btn btn-ghost" href="dashboard.html">แดชบอร์ดสรุป</a>
       </div>
+      <p class="hint">ต้องเข้าสู่ระบบก่อน จึงจะเปิดดูข้อมูลในหน้าเหล่านี้ได้ — ยังไม่มีบัญชี? <a href="register.html">สมัครสมาชิก</a> หรือ <a href="login.html">เข้าสู่ระบบ</a></p>
     </div>
 
     <div class="card">
