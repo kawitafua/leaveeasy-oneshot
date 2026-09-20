@@ -1,5 +1,10 @@
 # 🔧 LeaveEasy — จุดเริ่มต้นของใบงาน
 
+- 🌐 **เว็บที่ใช้งานได้จริง:** https://leaveeasy-oneshot-kawitafua.web.app
+- 🧪 **ผลการทดสอบ:** [test-results.md](test-results.md)
+
+---
+
 **ADT-RAISE Non-Degree Batch 2 · Module 2: MVP-Ready** (สัปดาห์ที่ 6–9)
 
 นี่คือ **เว็บ prototype ของระบบขอลาออนไลน์** ที่ทุกคนจะใช้เป็นจุดเริ่มต้นในคาบ Workshop บ่ายวันเสาร์
