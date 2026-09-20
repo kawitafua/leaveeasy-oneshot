@@ -13,6 +13,8 @@
       ".firebase/**",
       "**/node_modules/**",
       "scripts/**",
+      "config/**",
+      "**/*.log",
       "leaveeasy-spec.md",
       "fixit-spec.md",
       "README.md",
